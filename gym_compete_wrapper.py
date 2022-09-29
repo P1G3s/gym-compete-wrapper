@@ -44,25 +44,10 @@ class gym_compete_wrapper(AECEnv, ABC):
     def reset(self, *args: Any, **kwargs: Any) -> Union[dict, Tuple[dict, dict]]:
         self.env.reset(*args, **kwargs)
         observation, _, _, info = self.env.last(self)
-        if isinstance(observation, dict) and 'action_mask' in observation:
-            observation_dict = {
-                'agent_id': self.env.agent_selection,
-                'obs': observation['observation'],
-                'mask':
-                [True if obm == 1 else False for obm in observation['action_mask']]
-            }
-        else:
-            if isinstance(self.action_space, gym.spaces.Discrete):
-                observation_dict = {
-                    'agent_id': self.env.agent_selection,
-                    'obs': observation,
-                    'mask': [True] * self.env.action_space(self.env.agent_selection).n
-                }
-            else:
-                observation_dict = {
-                    'agent_id': self.env.agent_selection,
-                    'obs': observation,
-                }
+        observation_dict = {
+            'agent_id': self.env.agent_selection,
+            'obs': observation['observation'],
+        }
 
         if "return_info" in kwargs and kwargs["return_info"]:
             return observation_dict, info
@@ -74,13 +59,13 @@ class gym_compete_wrapper(AECEnv, ABC):
         self.action_made.append(action)
         if (self.action_available < len(self.agents)):
             observation, rew, done, info = self.env.last()
-            obs = {'agent_id': self.env.agent_selection, 'obs': observation}
+            obs = {'agent_id': self.env.agent_selection, 'obs': observation['observation']}
             for agent_id, reward in self.env.rewards.items():
                 self.rewards[self.agent_idx[agent_id]] = reward
             return obs, self.rewards, done, info
 
         observation, rew, done, info = self.env.last()
-        obs = {'agent_id': self.env.agent_selection, 'obs': observation}
+        obs = {'agent_id': self.env.agent_selection, 'obs': observation['observation']}
         for agent_id, reward in self.env.rewards.items():
             self.rewards[self.agent_idx[agent_id]] = reward
         self.env.step(self.action_made)

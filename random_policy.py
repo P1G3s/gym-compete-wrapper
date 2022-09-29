@@ -36,9 +36,12 @@ class RandomPolicy(BasePolicy):
         # mask = batch.obs.mask
         # logits = np.random.rand(*mask.shape)
         # logits[~mask] = -np.inf
-        length = len(batch.obs.observation)
+        length = len(batch.obs)
         return Batch(act=[np.random.rand(17) for _ in range(length)])
 
     def learn(self, batch: Batch, **kwargs: Any) -> Dict[str, float]:
         """Since a random agent learns nothing, it returns an empty dict."""
         return {}
+    def set_eps(self, eps):
+        """Do nothing. """
+        return None

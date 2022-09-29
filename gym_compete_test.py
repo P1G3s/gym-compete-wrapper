@@ -13,6 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from tianshou.data import Collector, VectorReplayBuffer
 from tianshou.env import DummyVectorEnv
+from tianshou.env import PettingZooEnv
 from gym_compete_wrapper import gym_compete_wrapper
 from tianshou.policy import (
     BasePolicy,
@@ -21,19 +22,43 @@ from tianshou.policy import (
     MultiAgentPolicyManager
 )
 from tianshou.trainer import offpolicy_trainer
+from tianshou.utils.net.continuous import ActorProb, Critic
+from tianshou.utils.net.common import ActorCritic, Net
 from tianshou.utils import TensorboardLogger
 from tianshou.utils.net.common import Net
+from torch.distributions import Independent, Normal
+
 
 env_id = 'you-shall-not-pass-humans-v0'
 def get_env():
     env = gym.make(env_id)
     env = raw_env(env)
     env = gym_compete_wrapper(env)
+    # env = PettingZooEnv(env)
     return env
 
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
+    ################ PPO Param ###################
+    parser.add_argument('--hidden-sizes', type=int, nargs='*', default=[64, 64])
+    parser.add_argument('--vf-coef', type=float, default=0.25)
+    parser.add_argument('--ent-coef', type=float, default=0.0)
+    parser.add_argument('--eps-clip', type=float, default=0.2)
+    parser.add_argument('--max-grad-norm', type=float, default=0.5)
+    parser.add_argument('--gae-lambda', type=float, default=0.95)
+    parser.add_argument('--rew-norm', type=int, default=1)
+    parser.add_argument('--dual-clip', type=float, default=None)
+    parser.add_argument('--value-clip', type=int, default=1)
+    parser.add_argument('--norm-adv', type=int, default=1)
+    parser.add_argument('--recompute-adv', type=int, default=0)
+    parser.add_argument('--resume', action="store_true")
+    parser.add_argument("--save-interval", type=int, default=4)
+
+    ################ PPO Param ###################
+    
+
+
     parser.add_argument('--seed', type=int, default=1626)
     parser.add_argument('--eps-test', type=float, default=0.05)
     parser.add_argument('--eps-train', type=float, default=0.1)
@@ -49,9 +74,9 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument('--step-per-collect', type=int, default=10)
     parser.add_argument('--update-per-step', type=float, default=0.1)
     parser.add_argument('--batch-size', type=int, default=64)
-    parser.add_argument(
-        '--hidden-sizes', type=int, nargs='*', default=[128, 128, 128, 128]
-    )
+#     parser.add_argument(
+#         '--hidden-sizes', type=int, nargs='*', default=[128, 128, 128, 128]
+#     )
     parser.add_argument('--training-num', type=int, default=1)
     parser.add_argument('--test-num', type=int, default=1)
     parser.add_argument('--logdir', type=str, default='log')
@@ -116,25 +141,49 @@ def get_agents(
     # agent1's obs_space = agent2's obs_space
     args.state_shape = observation_space.shape or observation_space.n
     args.action_shape = env.action_space.shape or env.action_space.n
+    args.max_action = env.action_space.high[0]
+
     if agent_learn is None:
-        # model
-        net = Net(
-            args.state_shape,
-            args.action_shape,
-            hidden_sizes=args.hidden_sizes,
+        net = Net(args.state_shape, hidden_sizes=args.hidden_sizes, device=args.device)
+        actor = ActorProb(
+            net, args.action_shape, max_action=args.max_action, device=args.device
+        ).to(args.device)
+        critic = Critic(
+            Net(args.state_shape, hidden_sizes=args.hidden_sizes, device=args.device),
             device=args.device
         ).to(args.device)
-        if optim is None:
-            optim = torch.optim.Adam(net.parameters(), lr=args.lr)
-        agent_learn = DQNPolicy(
-            net,
+        actor_critic = ActorCritic(actor, critic)
+        # orthogonal initialization
+        for m in actor_critic.modules():
+            if isinstance(m, torch.nn.Linear):
+                torch.nn.init.orthogonal_(m.weight)
+                torch.nn.init.zeros_(m.bias)
+        optim = torch.optim.Adam(actor_critic.parameters(), lr=args.lr)
+    
+        # replace DiagGuassian with Independent(Normal) which is equivalent
+        # pass *logits to be consistent with policy.forward
+        def dist(*logits):
+            return Independent(Normal(*logits), 1)
+    
+        agent_learn = PPOPolicy(
+            actor,
+            critic,
             optim,
-            args.gamma,
-            args.n_step,
-            target_update_freq=args.target_update_freq
+            dist,
+            discount_factor=args.gamma,
+            max_grad_norm=args.max_grad_norm,
+            eps_clip=args.eps_clip,
+            vf_coef=args.vf_coef,
+            ent_coef=args.ent_coef,
+            reward_normalization=args.rew_norm,
+            advantage_normalization=args.norm_adv,
+            recompute_advantage=args.recompute_adv,
+            dual_clip=args.dual_clip,
+            value_clip=args.value_clip,
+            gae_lambda=args.gae_lambda,
+            action_space=env.action_space,
         )
-        if args.resume_path:
-            agent_learn.load_state_dict(torch.load(args.resume_path))
+    
 
     if agent_opponent is None:
         if args.opponent_path:
@@ -144,11 +193,11 @@ def get_agents(
             agent_opponent = RandomPolicy()
 
     # TEST
-    agent_learn = RandomPolicy()
+    # agent_learn = RandomPolicy()
     if args.agent_id == 1:
         agents = [agent_learn, agent_opponent]
     else:
-        # THIS WAY WAY
+        # THIS WAY
         agents = [agent_opponent, agent_learn]
     policy = MultiAgentPolicyManager(agents, env)
     return policy, optim, env.agents
@@ -204,10 +253,13 @@ def train_agent(
         return mean_rewards >= args.win_rate
 
     def train_fn(epoch, env_step):
-        policy.policies[agents[args.agent_id - 1]].set_eps(args.eps_train)
+        # [agent.set_eps(args.eps_train) for agent in policy.policies.values()]
+        return
 
     def test_fn(epoch, env_step):
-        policy.policies[agents[args.agent_id - 1]].set_eps(args.eps_test)
+        # [agent.set_eps(args.eps_test) for agent in policy.policies.values()]
+        return 
+
 
     def reward_metric(rews):
         return rews[:, args.agent_id - 1]
