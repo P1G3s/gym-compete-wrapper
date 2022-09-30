@@ -42,6 +42,7 @@ class RandomPolicy(BasePolicy):
     def learn(self, batch: Batch, **kwargs: Any) -> Dict[str, float]:
         """Since a random agent learns nothing, it returns an empty dict."""
         return {}
+
     def set_eps(self, eps):
         """Do nothing. """
         return None

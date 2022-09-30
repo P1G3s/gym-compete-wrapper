@@ -6,10 +6,10 @@ from pettingzoo.utils import agent_selector, wrappers
 
 class raw_env(AECEnv):
     metadata = {
-        "render_modes": ["human"],
+        "render_modes": ["rgb_array"],
         "name": "kick_and_defend_v0",
         "is_parallelizable": False,
-        "render_fps": 1,
+        "render_fps": 30,
     }
     def __init__(self, env):
         super().__init__()
@@ -50,13 +50,15 @@ class raw_env(AECEnv):
 
 # obses, rews, done, infos
     def step(self, action):
-        print(self.agent_selection)
         ret = self.env.step(action)
         next_agent = self._agent_selector.next()
         self.agent_selection = next_agent
         rewards = ret[1]
-        self.rewards[self.agents[0]] += rewards[0]
-        self.rewards[self.agents[1]] += rewards[1]
+        dones = ret[2]
+        self.rewards[self.agents[0]] = rewards[0]
+        self.rewards[self.agents[1]] = rewards[1]
+        self.dones[self.agents[0]] = dones[0]
+        self.dones[self.agents[1]] = dones[1]
         return ret
     
     def reset(self, seed=None, return_info=False, options=None):
