@@ -59,7 +59,7 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument('--n-step', type=int, default=100)
     parser.add_argument('--target-update-freq', type=int, default=320)
     parser.add_argument('--epoch', type=int, default=1)
-    parser.add_argument('--step-per-epoch', type=int, default=500)
+    parser.add_argument('--step-per-epoch', type=int, default=100)
     parser.add_argument('--step-per-collect', type=int, default=10)
     parser.add_argument('--episode-per-collect', type=int, default=16)
     parser.add_argument('--repeat-per-collect', type=int, default=2)
@@ -95,7 +95,7 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument('--recompute-adv', type=int, default=0)
     parser.add_argument('--resume', action="store_true")
     parser.add_argument("--save-interval", type=int, default=4)
-    parser.add_argument('--render', type=float, default=0.0)
+    parser.add_argument('--render', type=float, default=0.001)
 
 
     return parser
