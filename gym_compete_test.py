@@ -11,7 +11,6 @@ from torch.utils.tensorboard import SummaryWriter
 
 from tianshou.data import Collector, VectorReplayBuffer
 from tianshou.env import DummyVectorEnv
-from tianshou.env import PettingZooEnv
 from tianshou.policy import (
     BasePolicy,
     PPOPolicy,
@@ -36,7 +35,6 @@ def get_env():
     env = gym.make(env_id)
     env = raw_env(env)
     env = gym_compete_wrapper(env)
-    # env = PettingZooEnv(env)
     return env
 
 
