@@ -55,6 +55,7 @@ class gym_compete_wrapper(AECEnv, ABC):
             return observation_dict
 
     def step(self, action: Any) -> Tuple[Dict, List[int], bool, Dict]:
+        self.env.agent_selection = self.env._agent_selector.next()
         self.action_available += 1
         self.action_made.append(action)
         if (self.action_available < len(self.agents)):

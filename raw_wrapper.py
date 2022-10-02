@@ -51,8 +51,6 @@ class raw_env(AECEnv):
 # obses, rews, done, infos
     def step(self, action):
         ret = self.env.step(action)
-        next_agent = self._agent_selector.next()
-        self.agent_selection = next_agent
         rewards = ret[1]
         dones = ret[2]
         self.rewards[self.agents[0]] = rewards[0]

@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
-from tianshou.data import Collector, VectorReplayBuffer
+from tianshou.data import VectorReplayBuffer
 from tianshou.env import DummyVectorEnv
 from tianshou.policy import (
     BasePolicy,
@@ -24,9 +24,9 @@ from tianshou.utils.net.common import Net
 from torch.distributions import Independent, Normal
 
 from typing import Any, Dict, List, Optional, Tuple, Union
+from tianshou.data import Collector
 from gym_compete_wrapper import gym_compete_wrapper
 from raw_wrapper import raw_env
-from random_policy import RandomPolicy
 from tianshou.policy import MultiAgentPolicyManager
 from tianshou.trainer import onpolicy_trainer
 
@@ -56,7 +56,7 @@ def get_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument('--n-step', type=int, default=100)
     parser.add_argument('--target-update-freq', type=int, default=320)
-    parser.add_argument('--epoch', type=int, default=1)
+    parser.add_argument('--epoch', type=int, default=2)
     parser.add_argument('--step-per-epoch', type=int, default=100)
     parser.add_argument('--step-per-collect', type=int, default=10)
     parser.add_argument('--episode-per-collect', type=int, default=16)
