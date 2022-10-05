@@ -212,8 +212,6 @@ def train_agent(
                 args.logdir, 'gym_compete', 'ppo', 'policy.pth'
             )
         for i in policy.policies:
-            print("############")
-            print(i)
             model_save_path = os.path.join(
                 args.logdir, 'gym_compete', 'ppo', 'policy{}.pth'.format(i)
             )
@@ -273,10 +271,6 @@ def watch(
                     args.logdir, 'gym_compete', 'ppo', 'policy{}.pth'.format(i)
                 )
             policy.policies[i].load_state_dict(torch.load(model_load_path))
-        
-    # policy, optim, agents = get_agents(
-    #     args, agents
-    # )
     policy.eval()
     collector = Collector(policy, env, exploration_noise=True)
     result = collector.collect(n_episode=1, render=args.render)

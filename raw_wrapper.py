@@ -6,7 +6,7 @@ from pettingzoo.utils import agent_selector, wrappers
 
 class raw_env(AECEnv):
     metadata = {
-        "render_modes": ["rgb_array"],
+        "render_modes": ["human"],
         "name": "kick_and_defend_v0",
         "is_parallelizable": False,
         "render_fps": 30,
