@@ -20,15 +20,6 @@ class raw_env(AECEnv):
 
         self.action_spaces =  {str(i.id): i.action_space for _,i in env.agents.items()}
         self.observation_spaces =  {str(i.id): i.observation_space for _,i in env.agents.items()}
-        # self.observation_spaces = {
-        #     str(i.id): spaces.Dict(
-        #         {
-        #             "observation": i.observation_space,
-        #             "action_mask": spaces.Box(low=0, high=1, shape=(17,), dtype=np.int8),
-        #         }
-        #     )
-        #     for _,i in env.agents.items()
-        # }
         self._agent_selector = agent_selector(self.agents)
         self.agent_selection = self._agent_selector.reset()
 
@@ -40,7 +31,6 @@ class raw_env(AECEnv):
 
     def observe(self, agent):
         return {"observation": self.env.agents[int(agent)]._get_obs()}
-        # return {"observation": self.env.agents[int(agent)]._get_obs(), "action_mask": np.zeros(17, "int8")}
 
     def observation_space(self, agent):
         return self.observation_spaces[agent]

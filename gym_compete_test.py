@@ -199,21 +199,27 @@ def train_agent(
     # policy.set_eps(1)
     train_collector.collect(n_step=args.batch_size * args.training_num)
     # log
-    log_path = os.path.join(args.logdir, 'gym_compete', 'dqn')
+    log_path = os.path.join(args.logdir, 'gym_compete', 'ppo')
     writer = SummaryWriter(log_path)
     writer.add_text("args", str(args))
     logger = TensorboardLogger(writer)
 
     def save_best_fn(policy):
-        # if hasattr(args, 'model_save_path'):
-        #     model_save_path = args.model_save_path
-        # else:
-        #     model_save_path = os.path.join(
-        #         args.logdir, 'gym_compete', 'dqn', 'policy.pth'
-        #     )
-        # torch.save(
-        #     policy.policies[agents[args.agent_id - 1]].state_dict(), model_save_path
-        # )
+        if hasattr(args, 'model_save_path'):
+            model_save_path = args.model_save_path
+        else:
+            model_save_path = os.path.join(
+                args.logdir, 'gym_compete', 'ppo', 'policy.pth'
+            )
+        for i in policy.policies:
+            print("############")
+            print(i)
+            model_save_path = os.path.join(
+                args.logdir, 'gym_compete', 'ppo', 'policy{}.pth'.format(i)
+            )
+            torch.save(
+                policy.policies[i].state_dict(), model_save_path
+            )
         return 
 
     def stop_fn(mean_rewards):
@@ -221,15 +227,11 @@ def train_agent(
         return False 
         
     def train_fn(epoch, env_step):
-        # [agent.set_eps(args.eps_train) for agent in policy.policies.values()]
-        # policy.policies[agents[args.agent_id - 1]].set_eps(args.ep_train)
-        # policy.policies.values()[args.agent_id-1].set_eps(args.ep_train)
+        [agent.set_eps(args.eps_train) for agent in policy.policies.values()]
         return
 
     def test_fn(epoch, env_step):
-        # [agent.set_eps(args.eps_test) for agent in policy.policies.values()]
-        # policy.policies[agents[args.agent_id - 1]].set_eps(args.ep_test)
-        # policy.policies.values()[args.agent_id-1].set_eps(args.ep_test)
+        [agent.set_eps(args.eps_test) for agent in policy.policies.values()]
         return 
 
 
@@ -262,11 +264,20 @@ def watch(
     policy: Optional[BasePolicy] = None
 ) -> None:
     env = DummyVectorEnv([get_env])
+    if not policy:
+        # init policy
+        policy, _, _ = get_agents(args)
+        # load policy
+        for i in policy.policies:
+            model_load_path = os.path.join(
+                    args.logdir, 'gym_compete', 'ppo', 'policy{}.pth'.format(i)
+                )
+            policy.policies[i].load_state_dict(torch.load(model_load_path))
+        
     # policy, optim, agents = get_agents(
     #     args, agents
     # )
     policy.eval()
-    # policy.policies[agents[args.agent_id - 1]].set_eps(args.eps_test)
     collector = Collector(policy, env, exploration_noise=True)
     result = collector.collect(n_episode=1, render=args.render)
     rews, lens = result["rews"], result["lens"]
