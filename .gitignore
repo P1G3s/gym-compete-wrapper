@@ -1,2 +1,6 @@
 __pycache__/
 log/
+run
+test
+server/
+portal

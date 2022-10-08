@@ -67,9 +67,9 @@ class gym_compete_wrapper(AECEnv, ABC):
 
         observation, rew, done, info = self.env.last()
         obs = {'agent_id': self.env.agent_selection, 'obs': observation['observation']}
+        self.env.step(self.action_made)
         for agent_id, reward in self.env.rewards.items():
             self.rewards[self.agent_idx[agent_id]] = reward
-        self.env.step(self.action_made)
 
         # reset actions that have been made
         self.action_available = 0

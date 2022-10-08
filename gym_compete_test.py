@@ -24,7 +24,8 @@ from tianshou.utils.net.common import Net
 from torch.distributions import Independent, Normal
 
 from typing import Any, Dict, List, Optional, Tuple, Union
-from tianshou.data import Collector
+# from tianshou.data import Collector
+from collector import Collector
 from gym_compete_wrapper import gym_compete_wrapper
 from raw_wrapper import raw_env
 from tianshou.policy import MultiAgentPolicyManager
