@@ -1,8 +1,8 @@
 __pycache__/
 log/
+server/
 run
 test
 close
-server/
 portal
 logs
