@@ -93,7 +93,7 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument('--norm-adv', type=int, default=1)
     parser.add_argument('--recompute-adv', type=int, default=0)
     parser.add_argument('--resume', action="store_true")
-    parser.add_argument("--save-interval", type=int, default=4)
+    parser.add_argument("--save-interval", type=int, default=1)
     parser.add_argument('--render', type=float, default=0.001)
 
 
@@ -203,7 +203,7 @@ def train_agent(
     log_path = os.path.join(args.logdir, 'gym_compete', 'ppo')
     writer = SummaryWriter(log_path)
     writer.add_text("args", str(args))
-    logger = TensorboardLogger(writer)
+    logger = TensorboardLogger(writer, save_interval=args.save_interval)
 
     def save_best_fn(policy):
         if hasattr(args, 'model_save_path'):
@@ -220,6 +220,25 @@ def train_agent(
                 policy.policies[i].state_dict(), model_save_path
             )
         return 
+
+    def save_checkpoint_fn(epoch, env_step, gradient_step):
+        print("-----saving checkpoint-----")
+        ckpt_path = os.path.join(log_path, "checkpoint.pth")
+        # ckpt_path = os.path.join(log_path, f"checkpoint_{epoch}.pth")
+        for i in policy.policies:
+            torch.save(
+                {
+                    "model": policy.policies[i].state_dict(),
+                    "optim": optim[int(i)].state_dict(),
+                }, ckpt_path
+            )
+            model_save_path = os.path.join(
+                args.logdir, 'gym_compete', 'ppo', 'policy{}.pth'.format(i)
+            )
+            torch.save(
+                policy.policies[i].state_dict(), model_save_path
+            )
+        return ckpt_path
 
     def stop_fn(mean_rewards):
         # return mean_rewards >= args.win_rate
@@ -249,10 +268,10 @@ def train_agent(
         args.batch_size,
         episode_per_collect=args.episode_per_collect,
         stop_fn=stop_fn,
-        save_best_fn=save_best_fn,
+        # save_best_fn=save_best_fn,
         logger=logger,
-        resume_from_log=args.resume
-
+        resume_from_log=args.resume,
+        save_checkpoint_fn=save_checkpoint_fn,
     )
 
     return result, policy

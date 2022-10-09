@@ -2,5 +2,7 @@ __pycache__/
 log/
 run
 test
+close
 server/
 portal
+logs
