@@ -74,6 +74,19 @@ def get_parser() -> argparse.ArgumentParser:
         '--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu'
     )
     # ppo special
+    # parser.add_argument('--vf-coef', type=float, default=0.25)
+    # parser.add_argument('--ent-coef', type=float, default=0.0)
+    # parser.add_argument('--eps-clip', type=float, default=0.2)
+    # parser.add_argument('--max-grad-norm', type=float, default=0.5)
+    # parser.add_argument('--gae-lambda', type=float, default=0.95)
+    # parser.add_argument('--rew-norm', type=int, default=1)
+    # parser.add_argument('--dual-clip', type=float, default=None)
+    # parser.add_argument('--value-clip', type=int, default=0)
+    # parser.add_argument('--norm-adv', type=int, default=0)
+    # parser.add_argument('--recompute-adv', type=int, default=1)
+    # parser.add_argument('--resume', action="store_true")
+    # parser.add_argument("--save-interval", type=int, default=1)
+    # parser.add_argument('--render', type=float, default=0.001)
     parser.add_argument('--vf-coef', type=float, default=0.25)
     parser.add_argument('--ent-coef', type=float, default=0.0)
     parser.add_argument('--eps-clip', type=float, default=0.2)
@@ -81,12 +94,13 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument('--gae-lambda', type=float, default=0.95)
     parser.add_argument('--rew-norm', type=int, default=1)
     parser.add_argument('--dual-clip', type=float, default=None)
-    parser.add_argument('--value-clip', type=int, default=0)
-    parser.add_argument('--norm-adv', type=int, default=0)
-    parser.add_argument('--recompute-adv', type=int, default=1)
+    parser.add_argument('--value-clip', type=int, default=1)
+    parser.add_argument('--norm-adv', type=int, default=1)
+    parser.add_argument('--recompute-adv', type=int, default=0)
     parser.add_argument('--resume', action="store_true")
-    parser.add_argument("--save-interval", type=int, default=1)
+    parser.add_argument("--save-interval", type=int, default=4)
     parser.add_argument('--render', type=float, default=0.001)
+
 
 
     return parser
