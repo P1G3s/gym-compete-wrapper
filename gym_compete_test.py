@@ -41,37 +41,27 @@ def get_env():
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--buffer-size", type=int, default=4096)
-    parser.add_argument("--hidden-sizes", type=int, nargs="*", default=[64, 64])
-    parser.add_argument("--lr", type=float, default=3e-4)
-    parser.add_argument("--gamma", type=float, default=0.99)
-    parser.add_argument("--epoch", type=int, default=100)
-    parser.add_argument("--step-per-epoch", type=int, default=30000)
-    parser.add_argument("--step-per-collect", type=int, default=2048)
-    parser.add_argument("--repeat-per-collect", type=int, default=10)
-    parser.add_argument("--batch-size", type=int, default=128)
-    parser.add_argument("--training-num", type=int, default=1)
-    parser.add_argument("--test-num", type=int, default=1)
-    # ppo special
-    parser.add_argument("--rew-norm", type=int, default=True)
-    # In theory, `vf-coef` will not make any difference if using Adam optimizer.
-    parser.add_argument("--vf-coef", type=float, default=0.25)
-    parser.add_argument("--ent-coef", type=float, default=0.0)
-    parser.add_argument("--gae-lambda", type=float, default=0.95)
-    parser.add_argument("--bound-action-method", type=str, default="clip")
-    parser.add_argument("--lr-decay", type=int, default=True)
-    parser.add_argument("--max-grad-norm", type=float, default=0.5)
-    parser.add_argument("--eps-clip", type=float, default=0.2)
-    parser.add_argument("--dual-clip", type=float, default=None)
-    parser.add_argument("--value-clip", type=int, default=0)
-    parser.add_argument("--norm-adv", type=int, default=0)
-    parser.add_argument("--recompute-adv", type=int, default=1)
-    parser.add_argument("--logdir", type=str, default="log")
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--eps-test', type=float, default=0.05)
+    parser.add_argument('--eps-train', type=float, default=0.1)
+    parser.add_argument('--buffer-size', type=int, default=4096)
+    parser.add_argument('--lr', type=float, default=3e-4)
+    parser.add_argument(
+        '--gamma', type=float, default=0.99, help='a smaller gamma favors earlier win'
+    )
+    parser.add_argument('--epoch', type=int, default=10)
+    parser.add_argument('--step-per-epoch', type=int, default=30000)
+    parser.add_argument('--step-per-collect', type=int, default=10)
+    parser.add_argument('--episode-per-collect', type=int, default=16)
+    parser.add_argument('--repeat-per-collect', type=int, default=2)
+    parser.add_argument('--update-per-step', type=float, default=0.1)
+    parser.add_argument('--batch-size', type=int, default=64)
+    parser.add_argument('--hidden-sizes', type=int, nargs='*', default=[64, 64])
+    parser.add_argument('--training-num', type=int, default=1)
+    parser.add_argument('--test-num', type=int, default=1)
+    parser.add_argument('--logdir', type=str, default='log')
+    parser.add_argument('--agent-num', type=int, default=2)
 
-    parser.add_argument("--agent-num", type=int, default=2)
-    parser.add_argument("--save-interval", type=int, default=2)
-    parser.add_argument('--resume', action="store_true")
 
     parser.add_argument(
         '--watch',
@@ -83,6 +73,21 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu'
     )
+    # ppo special
+    parser.add_argument('--vf-coef', type=float, default=0.25)
+    parser.add_argument('--ent-coef', type=float, default=0.0)
+    parser.add_argument('--eps-clip', type=float, default=0.2)
+    parser.add_argument('--max-grad-norm', type=float, default=0.5)
+    parser.add_argument('--gae-lambda', type=float, default=0.95)
+    parser.add_argument('--rew-norm', type=int, default=1)
+    parser.add_argument('--dual-clip', type=float, default=None)
+    parser.add_argument('--value-clip', type=int, default=0)
+    parser.add_argument('--norm-adv', type=int, default=0)
+    parser.add_argument('--recompute-adv', type=int, default=1)
+    parser.add_argument('--resume', action="store_true")
+    parser.add_argument("--save-interval", type=int, default=1)
+    parser.add_argument('--render', type=float, default=0.001)
+
 
     return parser
 
@@ -192,28 +197,21 @@ def train_agent(
     writer.add_text("args", str(args))
     logger = TensorboardLogger(writer, save_interval=args.save_interval)
 
-#     def save_best_fn(policy):
-#         if hasattr(args, 'model_save_path'):
-#             model_save_path = args.model_save_path
-#         else:
-#             model_save_path = os.path.join(
-#                 args.logdir, 'gym_compete', 'ppo', 'policy.pth'
-#             )
-#         for i in policy.policies:
-#             model_save_path = os.path.join(
-#                 args.logdir, 'gym_compete', 'ppo', 'policy{}.pth'.format(i)
-#             )
-#             torch.save(
-#                 policy.policies[i].state_dict(), model_save_path
-#             )
-#         return 
-#     def train_fn(epoch, env_step):
-#         [agent.set_eps(args.eps_train) for agent in policy.policies.values()]
-#         return
-# 
-#     def test_fn(epoch, env_step):
-#         [agent.set_eps(args.eps_test) for agent in policy.policies.values()]
-#         return 
+    def save_best_fn(policy):
+        if hasattr(args, 'model_save_path'):
+            model_save_path = args.model_save_path
+        else:
+            model_save_path = os.path.join(
+                args.logdir, 'gym_compete', 'ppo', 'policy.pth'
+            )
+        for i in policy.policies:
+            model_save_path = os.path.join(
+                args.logdir, 'gym_compete', 'ppo', 'policy{}.pth'.format(i)
+            )
+            torch.save(
+                policy.policies[i].state_dict(), model_save_path
+            )
+        return 
 
     def save_checkpoint_fn(epoch, env_step, gradient_step):
         print("-----saving checkpoint-----")
@@ -234,6 +232,22 @@ def train_agent(
             )
         return ckpt_path
 
+    def stop_fn(mean_rewards):
+        # return mean_rewards >= args.win_rate
+        return False 
+        
+    def train_fn(epoch, env_step):
+        [agent.set_eps(args.eps_train) for agent in policy.policies.values()]
+        return
+
+    def test_fn(epoch, env_step):
+        [agent.set_eps(args.eps_test) for agent in policy.policies.values()]
+        return 
+
+
+    def reward_metric(rews):
+        return rews[:, args.agent_id - 1]
+
     # trainer
     result = onpolicy_trainer(
         policy,
@@ -244,12 +258,12 @@ def train_agent(
         args.repeat_per_collect,
         args.test_num,
         args.batch_size,
+        episode_per_collect=args.episode_per_collect,
+        stop_fn=stop_fn,
         # save_best_fn=save_best_fn,
-        step_per_collect=args.step_per_collect,
         logger=logger,
         resume_from_log=args.resume,
         save_checkpoint_fn=save_checkpoint_fn,
-        test_in_train=False,
     )
 
     return result, policy
@@ -271,6 +285,6 @@ def watch(
             policy.policies[i].load_state_dict(torch.load(model_load_path))
     policy.eval()
     collector = Collector(policy, env, exploration_noise=True)
-    result = collector.collect(n_episode=20, render=args.render)
+    result = collector.collect(n_episode=1, render=args.render)
     rews, lens = result["rews"], result["lens"]
     print(f"Final reward: {rews[:, 0].mean()}, length: {lens.mean()}")
