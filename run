@@ -1,2 +1,2 @@
 #/bin/bash
-python3 run.py --epoch 1000 --training-num 1 --testing-num 1 --step-per-epoch 1000 --step-per-collect 500 --render 0.001
+python3 run.py --epoch 100 --training-num 1 --testing-num 1 --render 0.
