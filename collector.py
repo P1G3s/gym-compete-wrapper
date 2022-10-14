@@ -75,8 +75,6 @@ class Collector(object):
         self.policy = policy
         self.preprocess_fn = preprocess_fn
         self._action_space = self.env.action_space
-        # this stores agent 0's 'data' to get updated after env steps
-        self.bad_rew_data = None
         # avoid creating attribute outside __init__
         self.reset(False)
 
@@ -357,31 +355,23 @@ class Collector(object):
                 if render > 0 and not np.isclose(render, 0):
                     time.sleep(render)
 
-            # update the reward of agent 0's 'data'
-            # add all 'data' into the buffer only after the env has stepped
-            # and the env only steps after agent 1's turn
-            if (self.data.obs["agent_id"][0] == '1'):
-                self.bad_rew_data.rew = self.data.rew
+            # replace agent 0's reward with agent 1's reward
+            if (self.data.obs['agent_id'] == ['1']):
+                self.buffer._meta.rew[len(self.buffer)-1][0] = self.data.rew[0][0]
+                self.buffer._meta.rew[len(self.buffer)-1][1] = self.data.rew[0][1]
 
-                ptr, ep_rew, ep_len, ep_idx = self.buffer.add(
-                    self.bad_rew_data, buffer_ids=ready_env_ids
-                )
-                ptr, ep_rew, ep_len, ep_idx = self.buffer.add(
-                    self.data, buffer_ids=ready_env_ids
-                )
-            else:
-                self.bad_rew_data = Batch(
-                    obs=self.data.obs,
-                    act=self.data.act,
-                    rew=self.data.rew,
-                    terminated=self.data.terminated,
-                    truncated=self.data.truncated,
-                    done=self.data.done,
-                    obs_next=self.data.obs_next,
-                    info=self.data.info,
-                    policy=self.data.policy
-                )
+            # add data into the buffer
+            ptr, ep_rew, ep_len, ep_idx = self.buffer.add(
+                self.data, buffer_ids=ready_env_ids
+            )
 
+            # CHECK
+            # if (self.data.obs['agent_id'] == ['1']):
+            #     print("\n")
+            #     print(self.buffer[len(self.buffer)-2].obs['agent_id'])
+            #     print(self.buffer[len(self.buffer)-2].rew)
+            #     print(self.buffer[len(self.buffer)-1].obs['agent_id'])
+            #     print(self.buffer[len(self.buffer)-1].rew)
 
             # collect statistics
             step_count += len(ready_env_ids)
@@ -460,8 +450,8 @@ class Collector(object):
             "rew_std": rew_std,
             "len_std": len_std,
         }
-
-
+# 
+# 
 # class AsyncCollector(Collector):
 #     """Async Collector handles async vector environment.
 # 
@@ -607,7 +597,6 @@ class Collector(object):
 #             # step in env
 #             result = self.env.step(action_remap, ready_env_ids)  # type: ignore
 # 
-# 
 #             if len(result) == 5:
 #                 obs_next, rew, terminated, truncated, info = result
 #                 done = np.logical_or(terminated, truncated)
@@ -667,7 +656,7 @@ class Collector(object):
 #                 self.env.render()
 #                 if render > 0 and not np.isclose(render, 0):
 #                     time.sleep(render)
-#     
+# 
 #             # add data into the buffer
 #             ptr, ep_rew, ep_len, ep_idx = self.buffer.add(
 #                 self.data, buffer_ids=ready_env_ids
