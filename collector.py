@@ -326,7 +326,8 @@ class Collector(object):
                             for info_item in info
                         ]
                     )
-                terminated = np.logical_and(done, ~truncated)
+                # terminated = np.logical_and(done, ~truncated)
+                terminated = done
             else:
                 raise ValueError()
 
@@ -355,10 +356,17 @@ class Collector(object):
                 if render > 0 and not np.isclose(render, 0):
                     time.sleep(render)
 
+            # # for debugging
+            # if True:
+            #     self.env.render()
+            #     time.sleep(0.05)
+
             # replace agent 0's reward with agent 1's reward
-            if (self.data.obs['agent_id'] == ['1']):
+            if (self.data.obs['agent_id'][0] == ['1']):
                 self.buffer._meta.rew[len(self.buffer)-1][0] = self.data.rew[0][0]
                 self.buffer._meta.rew[len(self.buffer)-1][1] = self.data.rew[0][1]
+                self.buffer._meta.done[len(self.buffer)-1][0] = self.data.done[0][0]
+                self.buffer._meta.done[len(self.buffer)-1][1] = self.data.done[0][1]
 
             # add data into the buffer
             ptr, ep_rew, ep_len, ep_idx = self.buffer.add(

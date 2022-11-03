@@ -20,6 +20,7 @@ class gym_compete_wrapper(AECEnv, ABC):
             self.agent_idx[agent_id] = i
 
         self.rewards = [0] * len(self.agents)
+        self.dones = [False] * len(self.agents)
 
         # Get first observation space, assuming all agents have equal space
         self.observation_space: Any = self.env.observation_space(self.agents[0])
@@ -59,22 +60,26 @@ class gym_compete_wrapper(AECEnv, ABC):
         self.action_available += 1
         self.action_made.append(action)
         if (self.action_available < len(self.agents)):
-            observation, rew, done, info = self.env.last()
+            observation, rew, _, info = self.env.last()
             obs = {'agent_id': self.env.agent_selection, 'obs': observation['observation']}
             for agent_id, reward in self.env.rewards.items():
                 self.rewards[self.agent_idx[agent_id]] = reward
-            return obs, self.rewards, done, info
+            for agent_id, done in self.env.dones.items():
+                self.dones[self.agent_idx[agent_id]] = done
+            return obs, self.rewards, self.dones[0], info
 
-        observation, rew, done, info = self.env.last()
+        observation, rew, _, info = self.env.last()
         obs = {'agent_id': self.env.agent_selection, 'obs': observation['observation']}
         self.env.step(self.action_made)
         for agent_id, reward in self.env.rewards.items():
             self.rewards[self.agent_idx[agent_id]] = reward
+        for agent_id, done in self.env.dones.items():
+            self.dones[self.agent_idx[agent_id]] = done
 
         # reset actions that have been made
         self.action_available = 0
         self.action_made = []
-        return obs, self.rewards, done, info
+        return obs, self.rewards, self.dones[1], info
 
     def close(self) -> None:
         self.env.close()

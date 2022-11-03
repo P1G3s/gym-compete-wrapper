@@ -47,6 +47,10 @@ class raw_env(AECEnv):
         self.rewards[self.agents[1]] = rewards[1]
         self.dones[self.agents[0]] = dones[0]
         self.dones[self.agents[1]] = dones[1]
+        if (self.dones["1"] or self.dones["0"]):
+            print("###############")
+            print(self.dones)
+            print(self.rewards)
         return ret
     
     def reset(self, seed=None, return_info=False, options=None):

@@ -6,16 +6,21 @@ import gym_compete
 import numpy as np
 import torch
 from torch.utils.tensorboard import SummaryWriter
+from torch.optim.lr_scheduler import LambdaLR
 
 from tianshou.data import VectorReplayBuffer
 from tianshou.env import DummyVectorEnv
 from tianshou.policy import BasePolicy, PPOPolicy, MultiAgentPolicyManager
 from tianshou.utils.net.continuous import ActorProb, Critic
 from tianshou.utils.net.common import ActorCritic, Net
+
 from tianshou.utils import TensorboardLogger
 from torch.distributions import Independent, Normal
 
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Any, Dict
+import types
+from tianshou.data import Batch
+
 
 # from tianshou.data import Collector
 from collector import Collector
@@ -24,6 +29,7 @@ from raw_wrapper import raw_env
 from tianshou.trainer import onpolicy_trainer
 
 env_id = "you-shall-not-pass-humans-v0"
+# env_id = "kick-and-defend-v0"
 
 
 def get_env():
@@ -35,33 +41,34 @@ def get_env():
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=1000)
     parser.add_argument("--eps-test", type=float, default=0.05)
     parser.add_argument("--eps-train", type=float, default=0.1)
-    parser.add_argument("--buffer-size", type=int, default=4096)
+    parser.add_argument("--buffer-size", type=int, default=16384)
     parser.add_argument("--lr", type=float, default=3e-4)
-    parser.add_argument("--epoch", type=int, default=10)
-    parser.add_argument("--step-per-epoch", type=int, default=30000)
+    parser.add_argument("--epoch", type=int, default=5000)
+    parser.add_argument("--step-per-epoch", type=int, default=16384)
     # parser.add_argument('--episode-per-collect', type=int, default=16)
-    parser.add_argument("--step-per-collect", type=int, default=2048)
-    parser.add_argument("--repeat-per-collect", type=int, default=2)
-    parser.add_argument("--batch-size", type=int, default=64)
-    parser.add_argument("--training-num", type=int, default=1)
-    parser.add_argument("--test-num", type=int, default=1)
+    # parser.add_argument("--step-per-update", type=int, default=40000)
+    # how many epochs until policy1 updates(load policy0)
+    parser.add_argument("--epoch-per-update", type=int, default=5)
+    parser.add_argument("--step-per-collect", type=int, default=16384)
+    parser.add_argument("--repeat-per-collect", type=int, default=4)
+    parser.add_argument("--batch-size", type=int, default=4096)
+    parser.add_argument("--training-num", type=int, default=2)
+    parser.add_argument("--test-num", type=int, default=2)
+    # parser.add_argument("--training-num", type=int, default=1)
+    # parser.add_argument("--test-num", type=int, default=1)
     parser.add_argument("--logdir", type=str, default="log")
     parser.add_argument("--agent-num", type=int, default=2)
+    parser.add_argument("--lr-decay", type=int, default=1)
+    # temparary assignment
+    parser.add_argument("--next-update-epoch", type=int, default=0)
+
     parser.add_argument(
-        "--gamma",
-        type=float,
-        default=0.99,
-        help="a smaller gamma favors earlier win"
+        "--gamma", type=float, default=0.995, help="a smaller gamma favors earlier win"
     )
-    parser.add_argument(
-        "--hidden-sizes",
-        type=int,
-        nargs="*",
-        default=[64, 64]
-    )
+    parser.add_argument("--hidden-sizes", type=int, nargs="*", default=[128, 128])
     parser.add_argument(
         "--watch",
         default=False,
@@ -69,9 +76,7 @@ def get_parser() -> argparse.ArgumentParser:
         help="no training, " "watch the play of pre-trained models",
     )
     parser.add_argument(
-        "--device",
-        type=str,
-        default="cuda" if torch.cuda.is_available() else "cpu"
+        "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu"
     )
     # ppo special
     parser.add_argument("--vf-coef", type=float, default=0.25)
@@ -79,15 +84,15 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--eps-clip", type=float, default=0.2)
     parser.add_argument("--max-grad-norm", type=float, default=0.5)
     parser.add_argument("--gae-lambda", type=float, default=0.95)
-    parser.add_argument("--rew-norm", type=int, default=1)
+    parser.add_argument("--rew-norm", type=int, default=0)
     parser.add_argument("--dual-clip", type=float, default=None)
     parser.add_argument("--value-clip", type=int, default=0)
     parser.add_argument("--norm-adv", type=int, default=1)
-    parser.add_argument("--recompute-adv", type=int, default=0)
+    parser.add_argument("--recompute-adv", type=int, default=1)
     parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--save-interval", type=int, default=10)
+    parser.add_argument("--save-interval", type=int, default=1)
     parser.add_argument("--render", type=float, default=0.001)
-
+    parser.add_argument("--bound-action-method", type=str, default="clip")
     return parser
 
 
@@ -116,38 +121,63 @@ def get_agents(
     if agents is None:
         agents = []
         optims = []
-        for _ in range(args.agent_num):
+        for i in range(args.agent_num):
             net = Net(
-                args.state_shape,
-                hidden_sizes=args.hidden_sizes,
-                device=args.device
+                args.state_shape, hidden_sizes=args.hidden_sizes, device=args.device
             )
             actor = ActorProb(
-                net,
-                args.action_shape,
-                max_action=args.max_action,
-                device=args.device
+                net, args.action_shape, max_action=args.max_action, device=args.device
             ).to(args.device)
             critic = Critic(
                 Net(
-                    args.state_shape,
-                    hidden_sizes=args.hidden_sizes,
-                    device=args.device
+                    args.state_shape, hidden_sizes=args.hidden_sizes, device=args.device
                 ),
                 device=args.device,
             ).to(args.device)
-            actor_critic = ActorCritic(actor, critic)
-            # orthogonal initialization
-            for m in actor_critic.modules():
-                if isinstance(m, torch.nn.Linear):
-                    torch.nn.init.orthogonal_(m.weight)
-                    torch.nn.init.zeros_(m.bias)
-            optim = torch.optim.Adam(actor_critic.parameters(), lr=args.lr)
 
-            # replace DiagGuassian with Independent(Normal) which is equivalent
-            # pass *logits to be consistent with policy.forward
+            for m in list(actor.modules()) + list(critic.modules()):
+                if isinstance(m, torch.nn.Linear):
+                    # orthogonal initialization
+                    torch.nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
+                    torch.nn.init.zeros_(m.bias)
+            # do last policy layer scaling, this will make initial actions have (close to)
+            # 0 mean and std, and will help boost performances,
+            # see https://arxiv.org/abs/2006.05990, Fig.24 for details
+            for m in actor.mu.modules():
+                if isinstance(m, torch.nn.Linear):
+                    torch.nn.init.zeros_(m.bias)
+                    m.weight.data.copy_(0.01 * m.weight.data)
+
+            optim = torch.optim.Adam(
+                list(actor.parameters()) + list(critic.parameters()), lr=args.lr
+            )
+
+            lr_scheduler = None
+            if args.lr_decay:
+                # decay learning rate to 0 linearly
+                max_update_num = (
+                    np.ceil(args.step_per_epoch / args.step_per_collect) * args.epoch
+                )
+
+                lr_scheduler = LambdaLR(
+                    optim, lr_lambda=lambda epoch: 1 - epoch / max_update_num
+                )
+
             def dist(*logits):
                 return Independent(Normal(*logits), 1)
+
+            # actor_critic = ActorCritic(actor, critic)
+            # # orthogonal initialization
+            # for m in actor_critic.modules():
+            #     if isinstance(m, torch.nn.Linear):
+            #         torch.nn.init.orthogonal_(m.weight)
+            #         torch.nn.init.zeros_(m.bias)
+            # optim = torch.optim.Adam(actor_critic.parameters(), lr=args.lr)
+
+            # # replace DiagGuassian with Independent(Normal) which is equivalent
+            # # pass *logits to be consistent with policy.forward
+            # def dist(*logits):
+            #     return Independent(Normal(*logits), 1)
 
             agent = PPOPolicy(
                 actor,
@@ -166,7 +196,18 @@ def get_agents(
                 value_clip=args.value_clip,
                 gae_lambda=args.gae_lambda,
                 action_space=env.action_space,
+                lr_scheduler=lr_scheduler
+                # action_bound_method=args.bound_action_method,
             )
+            # override agent1's learn function
+            if i == 1:
+
+                def new_learn(
+                    self, batch: Batch, batch_size: int, repeat: int, **kwargs: Any
+                ) -> Dict[str, List[float]]:
+                    return {"loss": 0, "loss/clip": 0, "loss/vf": 0, "loss/ent": 0}
+
+                agent.learn = types.MethodType(new_learn, agent)
             agents.append(agent)
             optims.append(optim)
 
@@ -205,12 +246,36 @@ def train_agent(
     writer = SummaryWriter(log_path)
     writer.add_text("args", str(args))
     logger = TensorboardLogger(writer, save_interval=args.save_interval)
+    args.next_update_epoch = args.epoch_per_update
+
+    if args.resume:
+        # load from existing checkpoint
+        print(f"Loading agent under {log_path}")
+        ckpt_path = os.path.join(log_path, "checkpoint.pth")
+        if os.path.exists(ckpt_path):
+            checkpoint = torch.load(ckpt_path, map_location=args.device)
+            print("Successfully loaded checkpoint")
+            for i in policy.policies:
+                model_path = os.path.join(
+                    args.logdir, "gym_compete", "ppo", "policy{}.pth".format(i)
+                )
+                if os.path.exists(model_path):
+                    model = torch.load(model_path)
+                    policy.policies[i].load_state_dict(model)
+                    # same optim loaded
+                    policy.policies[i].optim.load_state_dict(checkpoint["optim"])
+                else:
+                    print("Failed to load {}".format(model_path))
+        else:
+            print("Fail to load checkpoint")
 
     def save_checkpoint_fn(epoch, env_step, gradient_step):
         print("-----saving checkpoint-----")
-        ckpt_path = os.path.join(log_path, "checkpoint.pth")
         # ckpt_path = os.path.join(log_path, f"checkpoint_{epoch}.pth")
         for i in policy.policies:
+            ckpt_path = os.path.join(
+                args.logdir, "gym_compete", "ppo", "checkpoint{}.pth".format(i)
+            )
             torch.save(
                 {
                     "model": policy.policies[i].state_dict(),
@@ -229,7 +294,16 @@ def train_agent(
         return False
 
     def train_fn(epoch, env_step):
-        [agent.set_eps(args.eps_train) for agent in policy.policies.values()]
+        if epoch > args.next_update_epoch:
+            args.next_update_epoch += args.epoch_per_update
+            print("###############")
+            print("update policy 1")
+            print("###############")
+            model_load_path = os.path.join(
+                args.logdir, "gym_compete", "ppo", "policy0.pth"
+            )
+            policy.policies["1"].load_state_dict(torch.load(model_load_path))
+        # [agent.set_eps(args.eps_train) for agent in policy.policies.values()]
         return
 
     def test_fn(epoch, env_step):
@@ -237,7 +311,7 @@ def train_agent(
         return
 
     def reward_metric(rews):
-        return rews[:, args.agent_id - 1]
+        return rews[:, 0]
 
     # trainer
     result = onpolicy_trainer(
@@ -249,7 +323,8 @@ def train_agent(
         args.repeat_per_collect,
         args.test_num,
         args.batch_size,
-        stop_fn=stop_fn,
+        # stop_fn=stop_fn,
+        train_fn=train_fn,
         logger=logger,
         resume_from_log=args.resume,
         save_checkpoint_fn=save_checkpoint_fn,
