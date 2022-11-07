@@ -1,0 +1,29 @@
+#/bin/bash
+python3 run.py \
+	--seed 0 \
+	--lr 1e-3 \
+	--gamma 0.995 \
+	--epoch 5000 \
+	--buffer-size 409600 \
+	--step-per-epoch 409600 \
+	--batch-size 5120 \
+	--render 0.001 \
+	--save-interval 1 \
+	--repeat-per-collect 6 \
+	--training-num  2 \
+	--test-num 2 \
+ 	--step-per-collect 409600 \
+    --epoch-per-update 5 \
+	--resume
+
+# 	--vf-coef 0.25 \
+# 	--ent-coef 0.0 \
+# 	--gae-lambda 0.95 \
+# 	--max-grad-norm 0.5 \
+# 	--eps-clip 0.2 \
+# 	--value-clip 0 \
+# 	--norm-adv 0 \
+# 	--recompute-adv 1 \
+# 	--render 0 \
+# 	> trainlog 2>&1 
+

@@ -356,10 +356,10 @@ class Collector(object):
                 if render > 0 and not np.isclose(render, 0):
                     time.sleep(render)
 
-            # # for debugging
-            # if True:
-            #     self.env.render()
-            #     time.sleep(0.05)
+            # for debugging
+            if True:
+                self.env.render()
+                time.sleep(0.025)
 
             # replace agent 0's reward with agent 1's reward
             if (self.data.obs['agent_id'][0] == ['1']):

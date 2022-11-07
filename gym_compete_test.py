@@ -24,11 +24,16 @@ from tianshou.data import Batch
 
 # from tianshou.data import Collector
 from collector import Collector
+from expert_policy import ExpertPolicy
 from gym_compete_wrapper import gym_compete_wrapper
 from raw_wrapper import raw_env
 from tianshou.trainer import onpolicy_trainer
 
+# Agent 0 (red)   --  blocker
+# Agent 1 (green) --  walker
 env_id = "you-shall-not-pass-humans-v0"
+expert_id = 1
+expert_log_path = "./expert_model/you-shall-not-pass/agent{}.pkl".format(expert_id)
 # env_id = "kick-and-defend-v0"
 
 
@@ -44,21 +49,17 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=1000)
     parser.add_argument("--eps-test", type=float, default=0.05)
     parser.add_argument("--eps-train", type=float, default=0.1)
-    parser.add_argument("--buffer-size", type=int, default=16384)
+    parser.add_argument("--buffer-size", type=int, default=4096)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--epoch", type=int, default=5000)
-    parser.add_argument("--step-per-epoch", type=int, default=16384)
-    # parser.add_argument('--episode-per-collect', type=int, default=16)
-    # parser.add_argument("--step-per-update", type=int, default=40000)
+    parser.add_argument("--step-per-epoch", type=int, default=4096)
     # how many epochs until policy1 updates(load policy0)
     parser.add_argument("--epoch-per-update", type=int, default=5)
-    parser.add_argument("--step-per-collect", type=int, default=16384)
+    parser.add_argument("--step-per-collect", type=int, default=4096)
     parser.add_argument("--repeat-per-collect", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=4096)
     parser.add_argument("--training-num", type=int, default=2)
     parser.add_argument("--test-num", type=int, default=2)
-    # parser.add_argument("--training-num", type=int, default=1)
-    # parser.add_argument("--test-num", type=int, default=1)
     parser.add_argument("--logdir", type=str, default="log")
     parser.add_argument("--agent-num", type=int, default=2)
     parser.add_argument("--lr-decay", type=int, default=1)
@@ -166,19 +167,6 @@ def get_agents(
             def dist(*logits):
                 return Independent(Normal(*logits), 1)
 
-            # actor_critic = ActorCritic(actor, critic)
-            # # orthogonal initialization
-            # for m in actor_critic.modules():
-            #     if isinstance(m, torch.nn.Linear):
-            #         torch.nn.init.orthogonal_(m.weight)
-            #         torch.nn.init.zeros_(m.bias)
-            # optim = torch.optim.Adam(actor_critic.parameters(), lr=args.lr)
-
-            # # replace DiagGuassian with Independent(Normal) which is equivalent
-            # # pass *logits to be consistent with policy.forward
-            # def dist(*logits):
-            #     return Independent(Normal(*logits), 1)
-
             agent = PPOPolicy(
                 actor,
                 critic,
@@ -199,15 +187,19 @@ def get_agents(
                 lr_scheduler=lr_scheduler
                 # action_bound_method=args.bound_action_method,
             )
-            # override agent1's learn function
-            if i == 1:
 
-                def new_learn(
-                    self, batch: Batch, batch_size: int, repeat: int, **kwargs: Any
-                ) -> Dict[str, List[float]]:
-                    return {"loss": 0, "loss/clip": 0, "loss/vf": 0, "loss/ent": 0}
+            # Override agent1's learn function for self-play
+            # if i == 1:
+            #     def new_learn(
+            #         self, batch: Batch, batch_size: int, repeat: int, **kwargs: Any
+            #     ) -> Dict[str, List[float]]:
+            #         return {"loss": 0, "loss/clip": 0, "loss/vf": 0, "loss/ent": 0}
 
-                agent.learn = types.MethodType(new_learn, agent)
+            #     agent.learn = types.MethodType(new_learn, agent)
+
+            # Override blocker with expert policy
+            if i == expert_id:
+                agent = ExpertPolicy(env_id, env, expert_log_path, args.device)
             agents.append(agent)
             optims.append(optim)
 
@@ -251,28 +243,28 @@ def train_agent(
     if args.resume:
         # load from existing checkpoint
         print(f"Loading agent under {log_path}")
-        ckpt_path = os.path.join(log_path, "checkpoint.pth")
-        if os.path.exists(ckpt_path):
-            checkpoint = torch.load(ckpt_path, map_location=args.device)
-            print("Successfully loaded checkpoint")
-            for i in policy.policies:
-                model_path = os.path.join(
-                    args.logdir, "gym_compete", "ppo", "policy{}.pth".format(i)
-                )
-                if os.path.exists(model_path):
-                    model = torch.load(model_path)
-                    policy.policies[i].load_state_dict(model)
-                    # same optim loaded
-                    policy.policies[i].optim.load_state_dict(checkpoint["optim"])
-                else:
-                    print("Failed to load {}".format(model_path))
-        else:
-            print("Fail to load checkpoint")
+        for i in policy.policies:
+            ckpt_path = os.path.join(
+                    log_path,
+                    "checkpoint{}.pth".format(i))
+            if os.path.exists(ckpt_path):
+                print("Successfully loaded checkpoint")
+                checkpoint = torch.load(
+                        ckpt_path,
+                        map_location=args.device)
+                policy.policies[i].load_state_dict(checkpoint["model"])
+                policy.policies[i].optim.load_state_dict(
+                        checkpoint["optim"])
+            else:
+                print("Failed to load {}".format(ckpt_path))
 
     def save_checkpoint_fn(epoch, env_step, gradient_step):
         print("-----saving checkpoint-----")
         # ckpt_path = os.path.join(log_path, f"checkpoint_{epoch}.pth")
         for i in policy.policies:
+            if isinstance(policy.policies[i], ExpertPolicy):
+                print("no checkpoint for expert policy{}".format(i))
+                continue
             ckpt_path = os.path.join(
                 args.logdir, "gym_compete", "ppo", "checkpoint{}.pth".format(i)
             )
@@ -324,7 +316,7 @@ def train_agent(
         args.test_num,
         args.batch_size,
         # stop_fn=stop_fn,
-        train_fn=train_fn,
+        # train_fn=train_fn,
         logger=logger,
         resume_from_log=args.resume,
         save_checkpoint_fn=save_checkpoint_fn,
@@ -349,7 +341,6 @@ def watch(
             )
             policy.policies[i].load_state_dict(torch.load(model_load_path))
     policy.eval()
-    policy, _, _ = get_agents(args)
     collector = Collector(policy, env, exploration_noise=True)
     result = collector.collect(n_episode=20, render=args.render)
     rews, lens = result["rews"], result["lens"]
