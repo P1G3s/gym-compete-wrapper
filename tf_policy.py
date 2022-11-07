@@ -81,7 +81,8 @@ class MlpPolicyValue(Policy):
 
             assert isinstance(ob_space, gym.spaces.Box)
 
-            self.observation_ph = tf.placeholder(tf.float32, [None] + list(ob_space.shape), name="observation")
+            # self.observation_ph = tf.placeholder(dtype=tf.float32, shape=(8,) + ob_space.shape, name="observation")
+            self.observation_ph = tf.placeholder(dtype=tf.float32, shape=[None, ob_space.shape[0]], name="observation")
             self.stochastic_ph = tf.placeholder(tf.bool, (), name="stochastic")
             self.taken_action_ph = tf.placeholder(dtype=tf.float32, shape=[None, ac_space.shape[0]], name="taken_action")
 
@@ -121,9 +122,10 @@ class MlpPolicyValue(Policy):
     def act(self, observation, stochastic=True):
         outputs = [self.sampled_action, self.vpred]
         a, v = tf.get_default_session().run(outputs, {
-            self.observation_ph: observation[None],
+            self.observation_ph: observation,
             self.stochastic_ph: stochastic})
-        return a[0], {'vpred': v[0]}
+        # return a[0], {'vpred': v[0]}
+        return a
 
     def get_variables(self):
         return tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, self.scope)

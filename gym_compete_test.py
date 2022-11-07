@@ -36,6 +36,10 @@ expert_id = 1
 expert_log_path = "./expert_model/you-shall-not-pass/agent{}.pkl".format(expert_id)
 # env_id = "kick-and-defend-v0"
 
+# Solves the conflit of both pytorch and tensorflow trying to use the same gpu
+# by force pytorch to use another gpu
+os.environ["CUDA_VISIBLE_DEVICES"] = "1" 
+torch.cuda.device_count()
 
 def get_env():
     env = gym.make(env_id)
@@ -123,70 +127,76 @@ def get_agents(
         agents = []
         optims = []
         for i in range(args.agent_num):
-            net = Net(
-                args.state_shape, hidden_sizes=args.hidden_sizes, device=args.device
-            )
-            actor = ActorProb(
-                net, args.action_shape, max_action=args.max_action, device=args.device
-            ).to(args.device)
-            critic = Critic(
-                Net(
+            # Override blocker with expert policy
+            if i == expert_id:
+                agent = ExpertPolicy(env_id, env, expert_log_path, args.device)
+                optim = None
+            # Normal agent to be trained
+            else:
+                net = Net(
                     args.state_shape, hidden_sizes=args.hidden_sizes, device=args.device
-                ),
-                device=args.device,
-            ).to(args.device)
+                )
+                actor = ActorProb(
+                    net, args.action_shape, max_action=args.max_action, device=args.device
+                ).to(args.device)
+                critic = Critic(
+                    Net(
+                        args.state_shape, hidden_sizes=args.hidden_sizes, device=args.device
+                    ),
+                    device=args.device,
+                ).to(args.device)
 
-            for m in list(actor.modules()) + list(critic.modules()):
-                if isinstance(m, torch.nn.Linear):
-                    # orthogonal initialization
-                    torch.nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
-                    torch.nn.init.zeros_(m.bias)
-            # do last policy layer scaling, this will make initial actions have (close to)
-            # 0 mean and std, and will help boost performances,
-            # see https://arxiv.org/abs/2006.05990, Fig.24 for details
-            for m in actor.mu.modules():
-                if isinstance(m, torch.nn.Linear):
-                    torch.nn.init.zeros_(m.bias)
-                    m.weight.data.copy_(0.01 * m.weight.data)
+                for m in list(actor.modules()) + list(critic.modules()):
+                    if isinstance(m, torch.nn.Linear):
+                        # orthogonal initialization
+                        torch.nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
+                        torch.nn.init.zeros_(m.bias)
+                # do last policy layer scaling, this will make initial actions have (close to)
+                # 0 mean and std, and will help boost performances,
+                # see https://arxiv.org/abs/2006.05990, Fig.24 for details
+                for m in actor.mu.modules():
+                    if isinstance(m, torch.nn.Linear):
+                        torch.nn.init.zeros_(m.bias)
+                        m.weight.data.copy_(0.01 * m.weight.data)
 
-            optim = torch.optim.Adam(
-                list(actor.parameters()) + list(critic.parameters()), lr=args.lr
-            )
-
-            lr_scheduler = None
-            if args.lr_decay:
-                # decay learning rate to 0 linearly
-                max_update_num = (
-                    np.ceil(args.step_per_epoch / args.step_per_collect) * args.epoch
+                optim = torch.optim.Adam(
+                    list(actor.parameters()) + list(critic.parameters()), lr=args.lr
                 )
 
-                lr_scheduler = LambdaLR(
-                    optim, lr_lambda=lambda epoch: 1 - epoch / max_update_num
+                lr_scheduler = None
+                if args.lr_decay:
+                    # decay learning rate to 0 linearly
+                    max_update_num = (
+                        np.ceil(args.step_per_epoch / args.step_per_collect) * args.epoch
+                    )
+
+                    lr_scheduler = LambdaLR(
+                        optim, lr_lambda=lambda epoch: 1 - epoch / max_update_num
+                    )
+
+                def dist(*logits):
+                    return Independent(Normal(*logits), 1)
+
+                agent = PPOPolicy(
+                    actor,
+                    critic,
+                    optim,
+                    dist,
+                    discount_factor=args.gamma,
+                    max_grad_norm=args.max_grad_norm,
+                    eps_clip=args.eps_clip,
+                    vf_coef=args.vf_coef,
+                    ent_coef=args.ent_coef,
+                    reward_normalization=args.rew_norm,
+                    advantage_normalization=args.norm_adv,
+                    recompute_advantage=args.recompute_adv,
+                    dual_clip=args.dual_clip,
+                    value_clip=args.value_clip,
+                    gae_lambda=args.gae_lambda,
+                    action_space=env.action_space,
+                    lr_scheduler=lr_scheduler
+                    # action_bound_method=args.bound_action_method,
                 )
-
-            def dist(*logits):
-                return Independent(Normal(*logits), 1)
-
-            agent = PPOPolicy(
-                actor,
-                critic,
-                optim,
-                dist,
-                discount_factor=args.gamma,
-                max_grad_norm=args.max_grad_norm,
-                eps_clip=args.eps_clip,
-                vf_coef=args.vf_coef,
-                ent_coef=args.ent_coef,
-                reward_normalization=args.rew_norm,
-                advantage_normalization=args.norm_adv,
-                recompute_advantage=args.recompute_adv,
-                dual_clip=args.dual_clip,
-                value_clip=args.value_clip,
-                gae_lambda=args.gae_lambda,
-                action_space=env.action_space,
-                lr_scheduler=lr_scheduler
-                # action_bound_method=args.bound_action_method,
-            )
 
             # Override agent1's learn function for self-play
             # if i == 1:
@@ -197,9 +207,6 @@ def get_agents(
 
             #     agent.learn = types.MethodType(new_learn, agent)
 
-            # Override blocker with expert policy
-            if i == expert_id:
-                agent = ExpertPolicy(env_id, env, expert_log_path, args.device)
             agents.append(agent)
             optims.append(optim)
 

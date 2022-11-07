@@ -42,13 +42,13 @@ class ExpertPolicy(BasePolicy):
         elif env_id == "you-shall-not-pass-humans-v0":
             policy_type = "mlp"
         scope = "policy_expert"
-        tf_config = tf.ConfigProto(
-            inter_op_parallelism_threads=1,
-            intra_op_parallelism_threads=1)
-        sess = tf.Session(config=tf_config)
-        sess.__enter__()
 
         # Init policy
+        tf_config = tf.ConfigProto(
+            inter_op_parallelism_threads=1,
+            intra_op_parallelism_threads=1,)
+        sess = tf.Session(config=tf_config)
+        sess.__enter__()
         if policy_type == "lstm":
             self.policy = LSTMPolicy(scope=scope, reuse=False,
                                      ob_space=env.observation_space,
@@ -70,8 +70,8 @@ class ExpertPolicy(BasePolicy):
         **kwargs: Any,
     ) -> Batch:
 
-        action = self.policy.act(stochastic=True, observation=batch.obs[0])
-        action = torch.tensor([action[0]]).to(self.device)
+        action = self.policy.act(stochastic=True, observation=batch.obs)
+        action = torch.tensor(action).to(self.device)
         return Batch(act=action)
 
     def learn(self, batch: Batch, **kwargs: Any) -> Dict[str, float]:
